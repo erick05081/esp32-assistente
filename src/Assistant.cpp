@@ -251,7 +251,7 @@ Assistant::Result Assistant::ask(const String& userText, const ToolNotifier& onT
   return res;
 }
 
-Assistant::Result Assistant::askAudio(const uint8_t* wavBytes, size_t wavLen, const ToolNotifier& onTool) {
+Assistant::Result Assistant::askAudio(std::vector<uint8_t>& wav, const ToolNotifier& onTool) {
   Result res;
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -262,115 +262,104 @@ Assistant::Result Assistant::askAudio(const uint8_t* wavBytes, size_t wavLen, co
     res.text = "Falta configurar a chave da API do Gemini.";
     return res;
   }
-  if (!wavBytes || wavLen < 44) {
+  if (wav.size() < 44) {
     res.text = "Áudio vazio.";
     return res;
   }
 
-  String b64 = base64::encode(wavBytes, wavLen);
+  // 1. Gera base64 da gravação
+  String b64 = base64::encode(wav.data(), wav.size());
 
-  JsonDocument req;
-  req["systemInstruction"]["parts"].to<JsonArray>().add<JsonObject>()["text"] =
-      "Você é " ASSISTANT_NAME ", uma assistente de voz em um interfone com alto-falante e microfone. "
-      "O usuário enviou uma gravação de voz captada pelo microfone. "
-      "1. Se o áudio for apenas silêncio, ruído estático ou inaudível, responda exatamente: '[IGNORAR]'. "
-      "2. Se for uma chamada ('Aurora') ou pergunta/pedido, responda em português com texto limpo, natural e DIRETO (máximo 1 a 2 frases curtas), "
-      "sem emojis, sem markdown e sem listas, pois sua resposta será falada em voz alta no alto-falante físico do interfone. "
-      "Use as ferramentas disponíveis para controlar LED, timers ou status se solicitado.";
+  // 2. Libera a memória do vetor de áudio bruto IMEDIATAMENTE (recupera ~29 KB de RAM!)
+  wav.clear();
+  wav.shrink_to_fit();
 
-  JsonArray contents = req["contents"].to<JsonArray>();
+  // 3. Monta o corpo JSON diretamente na String body para evitar duplicar
+  //    a base64 dentro de uma estrutura JsonDocument (isso economiza > 50 KB de RAM e evita erro BIGNUM no SSL)
+  String body;
+  body.reserve(b64.length() + 2500);
+  body = "{\"contents\":[{\"role\":\"user\",\"parts\":[{\"inlineData\":{\"mimeType\":\"audio/wav\",\"data\":\"";
+  body += b64;
+  body += "\"}}]}],\"systemInstruction\":{\"parts\":[{\"text\":\"";
+  body += "Você é " ASSISTANT_NAME ", uma assistente de voz em um interfone com alto-falante e microfone. "
+          "O usuário falou pelo microfone físico. "
+          "1. Se o áudio for apenas silêncio, ruído estático ou inaudível, responda exatamente: '[IGNORAR]'. "
+          "2. Se for uma chamada ('Aurora') ou pergunta/pedido, responda em português com texto limpo, natural e DIRETO (máximo 1 a 2 frases curtas), "
+          "sem emojis, sem markdown e sem listas, pois sua resposta será falada em voz alta no alto-falante físico do interfone. "
+          "Use as ferramentas disponíveis para controlar LED, timers ou status se solicitado.";
+  body += "\"}}],";
 
-  for (const auto& m : gHistory) {
-    JsonObject c = contents.add<JsonObject>();
-    c["role"] = m.user ? "user" : "model";
-    c["parts"].to<JsonArray>().add<JsonObject>()["text"] = m.text;
+  // Declara ferramentas
+  {
+    JsonDocument toolsDoc;
+    JsonArray decls = toolsDoc["tools"].to<JsonArray>().add<JsonObject>()["functionDeclarations"].to<JsonArray>();
+    Tools::declare(decls);
+    String toolsStr;
+    serializeJson(toolsDoc, toolsStr);
+    if (toolsStr.startsWith("{") && toolsStr.endsWith("}")) {
+      body += toolsStr.substring(1, toolsStr.length() - 1);
+      body += ",";
+    }
   }
 
-  JsonObject userTurn = contents.add<JsonObject>();
-  userTurn["role"] = "user";
-  JsonArray userParts = userTurn["parts"].to<JsonArray>();
+  body += "\"generationConfig\":{\"temperature\":0.4}}";
 
-  JsonObject audioPart = userParts.add<JsonObject>();
-  JsonObject inlineData = audioPart["inlineData"].to<JsonObject>();
-  inlineData["mimeType"] = "audio/wav";
-  inlineData["data"] = b64;
+  // 4. Libera a String b64 IMEDIATAMENTE antes da conexão SSL!
+  b64 = "";
 
-  JsonArray decls = req["tools"].to<JsonArray>().add<JsonObject>()["functionDeclarations"].to<JsonArray>();
-  Tools::declare(decls);
-  req["generationConfig"]["temperature"] = 0.5;
+  Serial.printf("[GEMINI-AUDIO] Payload pronto. Heap livre antes do SSL: %u bytes\n", ESP.getFreeHeap());
 
   String models[2] = {gSettings->model, FALLBACK_MODEL};
   int modelCount = (gSettings->model == FALLBACK_MODEL) ? 1 : 2;
   int modelIdx = 0;
   String reply;
 
-  for (int round = 0; round < kMaxToolRounds; round++) {
-    String body;
-    serializeJson(req, body);
-
-    JsonDocument resp;
-    int code = 0;
-    String detail;
-    while (true) {
-      uint32_t t0 = millis();
-      code = postGemini(models[modelIdx], body, resp, detail);
-      Serial.printf("[GEMINI-AUDIO] %s -> HTTP %d em %lu ms (heap %u)\n", models[modelIdx].c_str(), code,
-                    (unsigned long)(millis() - t0), ESP.getFreeHeap());
-      if (code == 200) break;
-      Serial.printf("[GEMINI-AUDIO] erro: %s\n", detail.c_str());
-      if (isRetryable(code) && modelIdx + 1 < modelCount) {
-        modelIdx++;
-        resp.clear();
-        delay(300);
-        continue;
-      }
-      break;
+  JsonDocument resp;
+  int code = 0;
+  String detail;
+  while (true) {
+    uint32_t t0 = millis();
+    code = postGemini(models[modelIdx], body, resp, detail);
+    Serial.printf("[GEMINI-AUDIO] %s -> HTTP %d em %lu ms (heap %u)\n", models[modelIdx].c_str(), code,
+                  (unsigned long)(millis() - t0), ESP.getFreeHeap());
+    if (code == 200) break;
+    Serial.printf("[GEMINI-AUDIO] erro: %s\n", detail.c_str());
+    if (isRetryable(code) && modelIdx + 1 < modelCount) {
+      modelIdx++;
+      resp.clear();
+      delay(300);
+      continue;
     }
-    if (code != 200) {
-      res.text = friendlyError(code, detail);
-      return res;
-    }
-
-    JsonObject content = resp["candidates"][0]["content"];
-    JsonArray parts = content["parts"];
-    if (parts.isNull() || parts.size() == 0) {
-      res.text = "Não consegui entender.";
-      return res;
-    }
-
-    String text;
-    bool hadCalls = false;
-    JsonArray toolParts;
-
-    for (JsonObject part : parts) {
-      if (part["thought"] | false) continue;
-      if (part["text"].is<const char*>()) text += part["text"].as<const char*>();
-
-      JsonObject call = part["functionCall"];
-      if (call.isNull()) continue;
-      if (!hadCalls) {
-        hadCalls = true;
-        contents.add(content);
-        JsonObject turn = contents.add<JsonObject>();
-        turn["role"] = "user";
-        toolParts = turn["parts"].to<JsonArray>();
-      }
-      const char* name = call["name"] | "";
-      JsonObject fr = toolParts.add<JsonObject>()["functionResponse"].to<JsonObject>();
-      fr["name"] = name;
-      if (call["id"].is<const char*>()) fr["id"] = call["id"];
-      Tools::execute(name, call["args"].as<JsonObjectConst>(), fr["response"].to<JsonObject>());
-      if (onTool) onTool(name);
-    }
-
-    if (!hadCalls) {
-      reply = text;
-      break;
-    }
+    break;
+  }
+  if (code != 200) {
+    res.text = friendlyError(code, detail);
+    return res;
   }
 
+  JsonObject content = resp["candidates"][0]["content"];
+  JsonArray parts = content["parts"];
+  if (parts.isNull() || parts.size() == 0) {
+    res.text = "Não consegui entender.";
+    return res;
+  }
+
+  String text;
+  for (JsonObject part : parts) {
+    if (part["thought"] | false) continue;
+    if (part["text"].is<const char*>()) text += part["text"].as<const char*>();
+
+    JsonObject call = part["functionCall"];
+    if (call.isNull()) continue;
+    const char* name = call["name"] | "";
+    JsonObject dummyResp;
+    Tools::execute(name, call["args"].as<JsonObjectConst>(), dummyResp);
+    if (onTool) onTool(name);
+  }
+
+  reply = text;
   reply.trim();
-  if (reply.isEmpty()) reply = "Pronto.";
+  if (reply.isEmpty()) reply = "[IGNORAR]";
 
   if (reply != "[IGNORAR]") {
     gHistory.push_back({true, "(áudio do microfone)"});
@@ -385,5 +374,15 @@ Assistant::Result Assistant::askAudio(const uint8_t* wavBytes, size_t wavLen, co
   res.text = reply;
   res.model = models[modelIdx];
   return res;
+}
+
+Assistant::Result Assistant::askAudio(const uint8_t* wavBytes, size_t wavLen, const ToolNotifier& onTool) {
+  if (!wavBytes || wavLen < 44) {
+    Result r;
+    r.text = "Áudio vazio.";
+    return r;
+  }
+  std::vector<uint8_t> temp(wavBytes, wavBytes + wavLen);
+  return askAudio(temp, onTool);
 }
 

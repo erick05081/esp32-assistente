@@ -78,6 +78,7 @@ bool playSentence(const String& sentence) {
 
   HTTPClient http;
   http.begin(url);
+  http.useHTTP10(true);  // Evita chunked encoding e garante leitura linear
   http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
   http.setTimeout(10000);
 
@@ -144,13 +145,16 @@ bool playSentence(const String& sentence) {
         ledcWrite(kSpeakerLedcChannel, pwmVal);
         delayMicroseconds(intervalUs);
       }
+      yield();  // Permite execução de tarefas do FreeRTOS e Wi-Fi
     } else {
       offset += (info.frame_bytes > 0) ? info.frame_bytes : 1;
     }
   }
 
-  // Corta o PWM para zerar corrente continua no alto-falante e no transistor
+  // Corta o PWM e desanexa o pino para zerar corrente continua e restaurar tons
   ledcWrite(kSpeakerLedcChannel, 0);
+  ledcDetachPin(SPEAKER_PIN);
+  pinMode(SPEAKER_PIN, OUTPUT);
   digitalWrite(SPEAKER_PIN, LOW);
 
   return true;
@@ -161,8 +165,7 @@ bool playSentence(const String& sentence) {
 namespace SpeechPlayer {
 
 void begin() {
-  pinMode(SPEAKER_PIN, OUTPUT);
-  digitalWrite(SPEAKER_PIN, LOW);
+  // Inicialização passiva para não desacoplar o driver de tons
 }
 
 bool isSpeaking() {

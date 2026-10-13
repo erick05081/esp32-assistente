@@ -146,7 +146,7 @@ static void handleAudioInput() {
   Tools::blink(1, 60);
 
   std::vector<uint8_t> wav;
-  if (!AudioHardware::recordWav(wav, 2800)) {
+  if (!AudioHardware::recordWav(wav, 1800)) {
     Serial.println("[MIC] Falha na gravação.");
     return;
   }
@@ -155,7 +155,7 @@ static void handleAudioInput() {
   sendEvent("thinking");
   uint32_t t0 = millis();
 
-  Assistant::Result r = assistant.askAudio(wav.data(), wav.size(), [](const char* tool) {
+  Assistant::Result r = assistant.askAudio(wav, [](const char* tool) {
     JsonDocument d;
     d["t"] = "tool";
     d["name"] = tool;
@@ -382,10 +382,10 @@ void loop() {
     }
     lastBootBtn = bootBtn;
 
-    // 2. Acionamento por voz alta / fala proxima no microfone de interfone
+    // 2. Acionamento por voz no microfone de interfone
     static uint32_t lastVadTrigger = 0;
-    if (millis() - lastVadTrigger > 6000) {
-      if (AudioHardware::detectLoudSound(450)) {
+    if (millis() - lastVadTrigger > 3500) {
+      if (AudioHardware::detectVoice()) {
         lastVadTrigger = millis();
         Serial.println("[VAD] Voz detectada no microfone! Ouvindo...");
         handleAudioInput();

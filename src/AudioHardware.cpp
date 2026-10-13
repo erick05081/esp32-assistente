@@ -27,12 +27,10 @@ namespace AudioHardware {
 void begin() {
   if (gInitialized) return;
 
-  // Configuração do alto-falante no GPIO 18
+  // Configuração inicial do alto-falante no GPIO 18
   pinMode(SPEAKER_PIN, OUTPUT);
   digitalWrite(SPEAKER_PIN, LOW);
   ledcSetup(kLedcChannel, 2000, kLedcResolution);
-  ledcAttachPin(SPEAKER_PIN, kLedcChannel);
-  ledcWrite(kLedcChannel, kSilenceDuty);
 
   // Configuração do microfone no GPIO 34 (ADC1_CH6)
   pinMode(MIC_PIN, INPUT);
@@ -46,10 +44,10 @@ void playTone(unsigned int freq, unsigned int durationMs) {
   if (!gInitialized) begin();
 
   if (freq > 0) {
+    ledcAttachPin(SPEAKER_PIN, kLedcChannel);
     ledcWriteTone(kLedcChannel, freq);
-    ledcWrite(kLedcChannel, kActiveDuty);
   } else {
-    ledcWrite(kLedcChannel, kSilenceDuty);
+    stopTone();
   }
 
   delay(durationMs);
@@ -57,7 +55,9 @@ void playTone(unsigned int freq, unsigned int durationMs) {
 }
 
 void stopTone() {
-  ledcWrite(kLedcChannel, kSilenceDuty);
+  ledcWriteTone(kLedcChannel, 0);
+  ledcDetachPin(SPEAKER_PIN);
+  pinMode(SPEAKER_PIN, OUTPUT);
   digitalWrite(SPEAKER_PIN, LOW);
 }
 
@@ -124,6 +124,13 @@ int getSoundLevelPercent() {
   // Ruído de fundo típico: 30 a 80 unidades. Som de voz: 200 a 1200 unidades.
   int level = map(p2p, 30, 900, 0, 100);
   return constrain(level, 0, 100);
+}
+
+bool detectVoice() {
+  int p2p = readMicPeakToPeak(35);
+  // Piso de ruído adaptativo (típico 40-70). Voz humana gera 170-300+.
+  int threshold = constrain(gAdaptiveNoiseFloor + 75, 140, 220);
+  return p2p >= threshold;
 }
 
 bool detectLoudSound(int threshold) {

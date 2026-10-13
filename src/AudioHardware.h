@@ -26,8 +26,11 @@ int readMicRaw();
 // Retorna nível de som/ruído estimado de 0% a 100%
 int getSoundLevelPercent();
 
+// Retorna true se detectar voz humana (acima do piso de ruído calibrado)
+bool detectVoice();
+
 // Retorna true se detectar um som alto (palma, assobio, voz próxima)
-bool detectLoudSound(int threshold = 350);
+bool detectLoudSound(int threshold = 250);
 
 // ---- Feedback Visual Ativo com LED (GPIO 2) ----
 // Pisca o LED onboard em tempo real quando o microfone detecta voz/som
@@ -39,6 +42,6 @@ void updateMicLedFeedback();
 void runSelfTest();
 
 // Grava áudio do microfone (GPIO 34) em formato WAV (8kHz, 16-bit mono com ganho digital)
-bool recordWav(std::vector<uint8_t>& outWav, unsigned int durationMs = 2800);
+bool recordWav(std::vector<uint8_t>& outWav, unsigned int durationMs = 1800);
 
 }  // namespace AudioHardware
