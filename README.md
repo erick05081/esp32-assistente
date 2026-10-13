@@ -56,12 +56,13 @@ O firmware já está **100% compilado e pronto** com a sua chave do AI Studio in
 
 A pasta `web/` contém a aplicação web moderna desenvolvida para rodar no **Google Chrome do Android**:
 
-### Opção 1: GitHub Pages (Mais recomendado e definitivo)
-1. Crie um repositório no seu GitHub (ex: `esp32-assistente`).
-2. Suba o conteúdo deste projeto.
-3. Ative o **GitHub Pages** nas configurações do repositório apontando para a pasta raiz ou `/web`.
-4. Abra o link gerado no Chrome do seu celular (ex: `https://seu-usuario.github.io/esp32-assistente/web/`).  
-   *(Como o GitHub Pages possui certificado HTTPS válido, o Web Bluetooth e o Web Speech funcionam perfeitamente).*
+### 🌐 Link no Ar (GitHub Pages)
+Acesse diretamente pelo navegador **Google Chrome no Android** (ou no PC):
+
+👉 **[https://erick05081.github.io/esp32-assistente/](https://erick05081.github.io/esp32-assistente/)**
+
+*(O GitHub Pages já conta com certificado SSL/HTTPS válido, permitindo que a Web Bluetooth API e a Web Speech API funcionem perfeitamente sem instalar nada).*
+
 
 ### Opção 2: Testar no PC Primeiro
 Você pode testar a interface diretamente no Google Chrome do próprio computador!
