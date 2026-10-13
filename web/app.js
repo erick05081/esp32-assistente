@@ -584,14 +584,10 @@ async function ask(text) {
 }
 
 async function respond(text, { allowContinue = true } = {}) {
-  if (!prefs.speak || !voice.synth) {
-    setState("idle", "🔊 Áudio no alto-falante do ESP32");
-    return finishTurn(allowContinue);
-  }
-  voice.stopWakeWordLoop();
-  setState("speaking");
-  const completed = await voice.speak(text, prefs);
-  if (state === "speaking") finishTurn(allowContinue && completed);
+  // O áudio da resposta sai exclusivamente pelo alto-falante físico do ESP32!
+  voice.stopSpeaking();
+  setState("idle", "🔊 Resposta falada no alto-falante do ESP32");
+  return finishTurn(allowContinue);
 }
 
 function finishTurn(allowContinue) {

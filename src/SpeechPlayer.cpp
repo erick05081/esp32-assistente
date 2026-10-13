@@ -70,6 +70,34 @@ std::vector<String> splitSentences(const String& text, size_t maxLen = 90) {
   return res;
 }
 
+class BufferStream : public Stream {
+ public:
+  std::vector<uint8_t> buf;
+  size_t readPos = 0;
+
+  size_t write(uint8_t c) override {
+    buf.push_back(c);
+    return 1;
+  }
+  size_t write(const uint8_t* buffer, size_t size) override {
+    if (size == 0) return 0;
+    buf.insert(buf.end(), buffer, buffer + size);
+    return size;
+  }
+  int available() override {
+    return (int)(buf.size() - readPos);
+  }
+  int read() override {
+    if (readPos < buf.size()) return buf[readPos++];
+    return -1;
+  }
+  int peek() override {
+    if (readPos < buf.size()) return buf[readPos];
+    return -1;
+  }
+  void flush() override {}
+};
+
 bool playSentence(const String& sentence) {
   if (sentence.isEmpty() || WiFi.status() != WL_CONNECTED) return false;
 
@@ -78,7 +106,6 @@ bool playSentence(const String& sentence) {
 
   HTTPClient http;
   http.begin(url);
-  http.useHTTP10(true);  // Evita chunked encoding e garante leitura linear
   http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
   http.setTimeout(10000);
 
@@ -89,31 +116,17 @@ bool playSentence(const String& sentence) {
     return false;
   }
 
-  int len = http.getSize();
-  WiFiClient* stream = http.getStreamPtr();
-  std::vector<uint8_t> mp3Buf;
-  mp3Buf.reserve(len > 0 ? len : 16384);
-
-  uint32_t startRead = millis();
-  while (http.connected() && (len > 0 ? (int)mp3Buf.size() < len : true) && (millis() - startRead < 8000)) {
-    size_t avail = stream->available();
-    if (avail > 0) {
-      size_t cur = mp3Buf.size();
-      mp3Buf.resize(cur + avail);
-      stream->readBytes((char*)&mp3Buf[cur], avail);
-    } else {
-      delay(5);
-      if (!stream->available() && !http.connected()) break;
-    }
-  }
+  BufferStream bs;
+  bs.buf.reserve(16384);
+  int bytesRead = http.writeToStream(&bs);
   http.end();
 
-  if (mp3Buf.empty()) {
+  if (bs.buf.empty() || bytesRead <= 0) {
     Serial.println("[TTS] Buffer MP3 vazio");
     return false;
   }
 
-  Serial.printf("[TTS] Audio recebido (%u bytes). Reproduzindo no alto-falante...\n", (unsigned int)mp3Buf.size());
+  Serial.printf("[TTS] Audio recebido (%u bytes). Reproduzindo no alto-falante...\n", (unsigned int)bs.buf.size());
 
   // Inicializa o decodificador minimp3 no heap para proteger a pilha do FreeRTOS
   std::unique_ptr<mp3dec_t> dec(new mp3dec_t);
@@ -123,8 +136,8 @@ bool playSentence(const String& sentence) {
   std::vector<int16_t> pcm(MINIMP3_MAX_SAMPLES_PER_FRAME);
 
   size_t offset = 0;
-  size_t mp3Size = mp3Buf.size();
-  const uint8_t* data = mp3Buf.data();
+  size_t mp3Size = bs.buf.size();
+  const uint8_t* data = bs.buf.data();
 
   // Configura LEDC para PWM de alta frequencia (62.5 kHz, 8 bits) no falante (GPIO 18)
   ledcSetup(kSpeakerLedcChannel, 62500, 8);
