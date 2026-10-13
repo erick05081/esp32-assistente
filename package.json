@@ -1,0 +1,12 @@
+{
+  "name": "esp32-aurora-web",
+  "version": "1.0.0",
+  "description": "Interface web mobile para assistente de voz no ESP32",
+  "scripts": {
+    "start": "serve -p 3000 web",
+    "tunnel": "npx localtunnel --port 3000"
+  },
+  "keywords": ["esp32", "web-bluetooth", "gemini", "voice-assistant"],
+  "author": "",
+  "license": "MIT"
+}

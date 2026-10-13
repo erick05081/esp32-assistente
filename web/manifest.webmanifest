@@ -1,0 +1,15 @@
+{
+  "name": "Aurora — Assistente ESP32",
+  "short_name": "Aurora",
+  "description": "Fale com o seu assistente pessoal rodando no ESP32 via Bluetooth.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07081a",
+  "theme_color": "#08091a",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
