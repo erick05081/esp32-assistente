@@ -182,9 +182,11 @@ body[data-state="speaking"] .wave { opacity: 1; }
 
 /* ---------- Composer ---------- */
 .composer { padding: 8px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.composer-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .toggle-chip { align-self: center; }
 .toggle-chip[aria-pressed="true"] { color: var(--text); background: hsla(258, 92%, 68%, 0.22); border-color: hsla(258, 92%, 68%, 0.5);
   box-shadow: 0 0 20px hsla(258, 92%, 68%, 0.25); }
+.pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: blink 1.2s infinite; display: inline-block; }
 .composer-row { display: flex; gap: 8px; padding: 6px; border-radius: 18px; background: var(--surface-strong);
   border: 1px solid var(--border); backdrop-filter: blur(18px); transition: border-color 0.2s; }
 .composer-row:focus-within { border-color: hsla(258, 92%, 68%, 0.5); }

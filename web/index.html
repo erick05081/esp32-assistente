@@ -69,10 +69,15 @@
     </main>
 
     <footer class="composer">
-      <button id="btn-continuous" class="chip toggle-chip" type="button" aria-pressed="false" title="Volta a ouvir automaticamente após cada resposta">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
-        Conversa contínua
-      </button>
+      <div class="composer-chips">
+        <button id="btn-wakeword" class="chip toggle-chip" type="button" aria-pressed="true" title="Fica atenta em segundo plano e responde quando você diz 'Aurora'">
+          <span class="pulse-dot"></span>
+          Ouvir "Aurora" (Alexa)
+        </button>
+        <button id="btn-continuous" class="chip toggle-chip" type="button" aria-pressed="false" title="Volta a ouvir automaticamente após cada resposta">
+          Conversa contínua
+        </button>
+      </div>
       <form id="composer-form" class="composer-row" autocomplete="off">
         <input id="text-input" type="text" placeholder="Ou digite uma mensagem…" enterkeyhint="send" aria-label="Mensagem" />
         <button id="btn-send" class="send-btn" type="submit" aria-label="Enviar">

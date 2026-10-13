@@ -48,8 +48,9 @@ String systemPrompt() {
   s += "Nunca use markdown, listas, asteriscos, emojis, tabelas ou código: apenas texto corrido, fácil de ouvir. ";
   s += "Escreva números, horas e unidades de forma que soem bem quando falados. ";
   s += "Se a transcrição parecer truncada ou sem sentido, peça gentilmente para repetir. ";
-  s += "Você pode controlar o LED da placa, criar, listar e cancelar lembretes e consultar o status do "
-       "dispositivo usando as ferramentas disponíveis; use-as quando o pedido envolver isso e confirme o que fez. ";
+  s += "Você pode controlar o LED da placa, tocar sons no alto-falante físico, medir o nível de ruído pelo microfone, "
+       "criar, listar e cancelar lembretes e consultar o status do dispositivo usando as ferramentas disponíveis; "
+       "use-as quando o pedido envolver isso e confirme o que fez. ";
   s += "Você não tem acesso à internet em tempo real (notícias, clima, cotações); se pedirem, "
        "diga isso brevemente e ofereça o que souber. ";
   String now = nowDescription();

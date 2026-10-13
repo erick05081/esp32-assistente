@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Preferências locais
 // --------------------------------------------------------------------------
 const prefs = Object.assign(
-  { voiceURI: "", rate: 1.05, speak: true, continuous: false },
+  { voiceURI: "", rate: 1.05, speak: true, continuous: false, wakeWord: true },
   JSON.parse(localStorage.getItem("aurora.prefs") || "{}"),
 );
 const savePrefs = () => localStorage.setItem("aurora.prefs", JSON.stringify(prefs));
@@ -150,10 +150,31 @@ function splitSentences(text, max = 220) {
   return out;
 }
 
+const WAKE_WORD_REGEX = /\b(aurora|ei\s+aurora|oi\s+aurora|ol[áa]\s+aurora|ok\s+aurora|alr[oô]ra)\b/i;
+
+function playDing() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (_) {}
+}
+
 class Voice {
   SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   synth = window.speechSynthesis;
   rec = null;
+  wakeRec = null;
+  wakeActive = false;
   token = 0;
   voices = [];
 
@@ -219,6 +240,65 @@ class Voice {
 
   abortListening() {
     this.rec?.abort();
+  }
+
+  startWakeWordLoop(onWake) {
+    if (!this.canListen) return;
+    this.wakeActive = true;
+    if (this.wakeRec) return;
+
+    const run = () => {
+      if (!this.wakeActive) return;
+      try {
+        const rec = new this.SR();
+        rec.lang = "pt-BR";
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.maxAlternatives = 1;
+        this.wakeRec = rec;
+
+        rec.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const transcript = e.results[i][0].transcript;
+            const match = transcript.match(WAKE_WORD_REGEX);
+            if (match) {
+              const command = transcript.slice(match.index + match[0].length).replace(/^[,.:;! ]+/, "").trim();
+              this.stopWakeWordLoop();
+              onWake(command);
+              return;
+            }
+          }
+        };
+
+        rec.onerror = (e) => {
+          if (e.error === "not-allowed") {
+            this.wakeActive = false;
+          }
+        };
+
+        rec.onend = () => {
+          this.wakeRec = null;
+          if (this.wakeActive) {
+            setTimeout(run, 300);
+          }
+        };
+
+        rec.start();
+      } catch (err) {
+        console.warn("Wake loop restart:", err);
+        if (this.wakeActive) setTimeout(run, 1000);
+      }
+    };
+
+    run();
+  }
+
+  stopWakeWordLoop() {
+    this.wakeActive = false;
+    try {
+      this.wakeRec?.abort();
+    } catch (_) {}
+    this.wakeRec = null;
   }
 
   /** Fala o texto. Resolve true se terminou normalmente, false se interrompido. */
@@ -419,7 +499,8 @@ async function startListening() {
     return;
   }
   voice.stopSpeaking();
-  setState("listening");
+  voice.stopWakeWordLoop();
+  setState("listening", "Ouvindo você…");
   $("interim").textContent = "";
   try {
     const text = await voice.listen((t) => ($("interim").textContent = t));
@@ -428,7 +509,7 @@ async function startListening() {
       ask(text);
     } else {
       $("interim").textContent = "";
-      setState("idle", "Não ouvi nada — toque para tentar de novo");
+      finishTurn(false);
     }
   } catch (err) {
     const msg = {
@@ -437,9 +518,42 @@ async function startListening() {
       network: "O reconhecimento de voz precisa de internet no celular.",
       "audio-capture": "Microfone indisponível.",
     }[err.message] || `Erro no reconhecimento de voz (${err.message}).`;
-    setState("idle");
+    finishTurn(false);
     toast(msg, { error: true, ms: 4000 });
   }
+}
+
+function startWakeWordMode() {
+  if (!ble.connected || !voice.canListen) {
+    setState(ble.connected ? "idle" : "disconnected");
+    return;
+  }
+  setState("idle", "Diga “Aurora…” para falar");
+  $("interim").textContent = "";
+
+  voice.startWakeWordLoop(async (command) => {
+    console.log("[WAKE] Wake word detectada! Comando:", command);
+    playDing();
+    ble.send({ t: "chirp" }).catch(() => {});
+    $("interim").textContent = "✨ Aurora ativa!";
+
+    if (command && command.length > 2) {
+      ask(command);
+    } else {
+      // Falou apenas "Aurora" -> escuta ativamente o comando que vem a seguir
+      setState("listening", "Pode falar… estou ouvindo");
+      try {
+        const text = await voice.listen((t) => ($("interim").textContent = t));
+        if (text) {
+          ask(text);
+        } else {
+          finishTurn(false);
+        }
+      } catch (_) {
+        finishTurn(false);
+      }
+    }
+  });
 }
 
 async function ask(text) {
@@ -448,6 +562,7 @@ async function ask(text) {
     return;
   }
   voice.stopSpeaking();
+  voice.stopWakeWordLoop();
   addMessage("user", text);
   $("interim").textContent = "";
   clearToolChips();
@@ -456,27 +571,39 @@ async function ask(text) {
   replyTimer = setTimeout(() => {
     if (state !== "thinking") return;
     addMessage("bot", "O ESP32 não respondeu a tempo. Tente novamente.", { error: true });
-    setState("idle");
+    finishTurn(false);
   }, REPLY_TIMEOUT_MS);
   try {
     await ble.send({ t: "ask", text });
   } catch (e) {
     clearTimeout(replyTimer);
-    setState(ble.connected ? "idle" : "disconnected");
+    finishTurn(false);
     toast(`Falha ao enviar: ${e.message}`, { error: true });
   }
 }
 
 async function respond(text, { allowContinue = true } = {}) {
   if (!prefs.speak || !voice.synth) return finishTurn(allowContinue);
+  voice.stopWakeWordLoop();
   setState("speaking");
   const completed = await voice.speak(text, prefs);
   if (state === "speaking") finishTurn(allowContinue && completed);
 }
 
 function finishTurn(allowContinue) {
-  setState(ble.connected ? "idle" : "disconnected");
-  if (allowContinue && prefs.continuous && ble.connected) setTimeout(() => state === "idle" && startListening(), 400);
+  voice.stopSpeaking();
+  if (!ble.connected) {
+    setState("disconnected");
+    return;
+  }
+
+  if (allowContinue && prefs.continuous) {
+    setTimeout(() => (state === "idle" || state === "speaking") && startListening(), 400);
+  } else if (prefs.wakeWord) {
+    startWakeWordMode();
+  } else {
+    setState("idle", "Toque para falar");
+  }
 }
 
 function onMessage(m) {
@@ -536,16 +663,17 @@ function setComposerEnabled(on) {
 }
 
 ble.addEventListener("connected", () => {
-  setState("idle");
   $("conn-text").textContent = "Conectado";
   setComposerEnabled(true);
   toast(`Conectado a ${ble.device?.name || "ESP32"}`);
   ble.send({ t: "status" }).catch(() => {});
   keepAwake(true);
+  finishTurn(false);
 });
 
 ble.addEventListener("disconnected", () => {
   clearTimeout(replyTimer);
+  voice.stopWakeWordLoop();
   voice.abortListening();
   voice.stopSpeaking();
   clearToolChips();
@@ -587,7 +715,7 @@ $("orb").addEventListener("click", () => {
       break;
     case "speaking":
       voice.stopSpeaking();
-      setState("idle");
+      finishTurn(false);
       break;
     case "thinking":
       toast("Aguardando a resposta do ESP32…");
@@ -603,6 +731,22 @@ $("composer-form").addEventListener("submit", (e) => {
   if (!text) return;
   $("text-input").value = "";
   ask(text);
+});
+
+const wakeBtn = $("btn-wakeword");
+const syncWakeWord = () => wakeBtn.setAttribute("aria-pressed", String(prefs.wakeWord));
+wakeBtn.addEventListener("click", () => {
+  prefs.wakeWord = !prefs.wakeWord;
+  savePrefs();
+  syncWakeWord();
+  if (prefs.wakeWord) {
+    toast("Modo 'Ei Aurora' ativado: chame pelo nome!");
+    if (ble.connected) finishTurn(false);
+  } else {
+    voice.stopWakeWordLoop();
+    toast("Modo 'Ei Aurora' desativado (toque para falar)");
+    if (state === "idle") setState("idle", "Toque para falar");
+  }
 });
 
 const contBtn = $("btn-continuous");
@@ -705,6 +849,7 @@ $("btn-test-voice").addEventListener("click", () => {
 // --------------------------------------------------------------------------
 function init() {
   chatLog.forEach(renderMessage);
+  syncWakeWord();
   syncContinuous();
   syncRate();
   populateVoices();

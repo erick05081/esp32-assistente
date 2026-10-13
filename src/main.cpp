@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "Assistant.h"
+#include "AudioHardware.h"
 #include "BleLink.h"
 #include "Settings.h"
 #include "Tools.h"
@@ -108,6 +109,7 @@ static void connectWifi() {
 
 static void handleAsk(const String& text) {
   Serial.printf("[ASK] %s\n", text.c_str());
+  AudioHardware::playChirp();  // feedback sonoro instantâneo no alto-falante
   sendEvent("thinking");
   uint32_t t0 = millis();
 
@@ -161,6 +163,8 @@ static void handleLine(const char* line) {
   } else if (!strcmp(t, "reset")) {
     assistant.clearHistory();
     sendEvent("info", "Memória da conversa apagada.");
+  } else if (!strcmp(t, "chirp")) {
+    AudioHardware::playChirp();
   } else if (!strcmp(t, "ping")) {
     sendEvent("pong");
   }
@@ -185,6 +189,7 @@ static void assistantTask(void*) {
     Tools::loop([](const String& label) {
       String msg = "Lembrete: " + label;
       Serial.printf("[TIMER] %s\n", msg.c_str());
+      AudioHardware::playAlarm();
       if (Ble.isConnected()) {
         sendEvent("alert", msg);
       } else if (pendingAlerts.size() < 8) {
@@ -224,6 +229,15 @@ static void handleSerialLine(String s) {
     d["t"] = "status";
   } else if (s == "/reset") {
     d["t"] = "reset";
+  } else if (s == "/som" || s == "/teste") {
+    AudioHardware::runSelfTest();
+    return;
+  } else if (s == "/mic") {
+    int raw = AudioHardware::readMicRaw();
+    int p2p = AudioHardware::readMicPeakToPeak(60);
+    int pct = AudioHardware::getSoundLevelPercent();
+    Serial.printf("[MIC] Raw: %d | Pico-a-Pico: %d | Nivel: %d%%\n", raw, p2p, pct);
+    return;
   } else {
     d["t"] = "ask";
     d["text"] = s;
@@ -256,6 +270,7 @@ void setup() {
   xTaskCreatePinnedToCore(assistantTask, "assistant", 20 * 1024, nullptr, 1, nullptr, 1);
 
   Tools::blink(2, 200);
+  AudioHardware::playBootChime();  // Toca melodia alegre no alto-falante ao ligar!
   Serial.printf("[SYS] pronto. heap livre: %u bytes\n", ESP.getFreeHeap());
 }
 

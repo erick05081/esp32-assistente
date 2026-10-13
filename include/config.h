@@ -11,6 +11,10 @@
 // LED azul onboard da maioria das placas ESP32 DevKit
 #define LED_PIN            2
 
+// Pinos de Áudio (Interfone: Alto-falante de 8 ohms e Microfone de eletreto)
+#define SPEAKER_PIN        18   // Alto-falante PWM via 2N2222A (lado direito)
+#define MIC_PIN            34   // Microfone analógico ADC1_CH6 (lado esquerdo)
+
 // Fuso horário de Brasília (POSIX TZ). Sem horário de verão.
 #define TZ_INFO            "<-03>3"
 #define NTP_SERVER_1       "pool.ntp.org"

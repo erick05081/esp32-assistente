@@ -2,6 +2,7 @@
 
 #include <WiFi.h>
 
+#include "AudioHardware.h"
 #include "config.h"
 
 namespace {
@@ -51,6 +52,7 @@ namespace Tools {
 void begin() {
   pinMode(LED_PIN, OUTPUT);
   setLed(false);
+  AudioHardware::begin();
 }
 
 bool ledOn() { return gLed; }
@@ -97,6 +99,14 @@ void declare(JsonArray d) {
 
   f = newFunction(d, "cancel_timers", "Cancela lembretes. Se 'label' for vazio, cancela todos.");
   prop(params(f), "label", "string", "Parte do texto do lembrete a cancelar (opcional)");
+
+  f = newFunction(d, "play_sound",
+                  "Toca um efeito sonoro ou tom de áudio no alto-falante físico conectado ao ESP32.");
+  prop(params(f), "sound", "string", "Tipo de som: 'beep', 'alarm', 'chime', 'success' ou 'chirp'");
+  required(f, {"sound"});
+
+  newFunction(d, "get_sound_level",
+              "Mede o nível de som e ruído do ambiente usando o microfone analógico conectado ao ESP32.");
 
   newFunction(d, "get_device_status",
               "Retorna o estado do ESP32: memória livre, tempo ligado, sinal Wi-Fi, IP, LED, temperatura do chip.");
@@ -163,6 +173,24 @@ void execute(const char* name, JsonObjectConst args, JsonObject result) {
     }
     result["ok"] = true;
     result["cancelados"] = n;
+
+  } else if (!strcmp(name, "play_sound")) {
+    String sound = args["sound"] | "beep";
+    if (sound == "alarm") AudioHardware::playAlarm();
+    else if (sound == "chime") AudioHardware::playBootChime();
+    else if (sound == "success") AudioHardware::playSuccess();
+    else if (sound == "chirp") AudioHardware::playChirp();
+    else AudioHardware::playBeep();
+    result["ok"] = true;
+    result["som_tocado"] = sound;
+
+  } else if (!strcmp(name, "get_sound_level")) {
+    int pct = AudioHardware::getSoundLevelPercent();
+    int p2p = AudioHardware::readMicPeakToPeak(60);
+    result["ok"] = true;
+    result["nivel_som_percentual"] = pct;
+    result["amplitude_p2p"] = p2p;
+    result["ambiente"] = (pct < 15) ? "silencioso" : (pct < 50) ? "moderado" : "barulhento";
 
   } else if (!strcmp(name, "get_device_status")) {
     result["heap_livre_bytes"] = ESP.getFreeHeap();
