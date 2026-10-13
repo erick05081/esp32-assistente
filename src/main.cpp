@@ -243,7 +243,9 @@ static void assistantTask(void*) {
       free(line);
     }
 
-    AudioHardware::updateMicLedFeedback();
+    if (AudioHardware::isMicLedFeedbackEnabled()) {
+      AudioHardware::updateMicLedFeedback();
+    }
 
     Tools::loop([](const String& label) {
       String msg = "Lembrete: " + label;
@@ -368,30 +370,21 @@ void setup() {
 
 void loop() {
   if (!SpeechPlayer::isSpeaking()) {
-    AudioHardware::updateMicLedFeedback();
-
     // 1. Acionamento manual pelo botao BOOT (GPIO 0)
-    static uint32_t lastVadCooldownUntil = 0;
     static bool lastBootBtn = HIGH;
     bool bootBtn = digitalRead(0);
     if (bootBtn == LOW && lastBootBtn == HIGH) {
       delay(40);
       if (digitalRead(0) == LOW) {
-        Serial.println("[BTN] Botao BOOT pressionado: ativando microfone!");
-        handleAudioInput();
-        lastVadCooldownUntil = millis() + 2500;
+        Serial.println("[BTN] Botao BOOT pressionado!");
+        AudioHardware::playChirp();
       }
     }
     lastBootBtn = bootBtn;
 
-    // 2. Acionamento por voz no microfone de interfone (com proteção contra auto-disparo)
-    if (millis() >= lastVadCooldownUntil) {
-      if (AudioHardware::detectVoice()) {
-        Serial.println("[VAD] Voz detectada no microfone! Ouvindo...");
-        handleAudioInput();
-        lastVadCooldownUntil = millis() + 2500;
-      }
-    }
+    // NOTA: Microfone físico (GPIO 34) desativado temporariamente por hardware.
+    // As perguntas de voz são captadas pelo celular (Chrome Web App) ou Serial,
+    // e o áudio da resposta é reproduzido diretamente no alto-falante físico do ESP32!
   }
 
   static String buf;

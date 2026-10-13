@@ -12,7 +12,7 @@ constexpr int kActiveDuty = 128;      // duty cycle 50% = onda quadrada máxima
 bool gInitialized = false;
 
 // Feedback ativo do microfone no LED onboard (GPIO 2)
-bool gMicLedFeedback = true;
+bool gMicLedFeedback = false;
 bool gLedActiveByMic = false;
 uint32_t gLastMicSampleTime = 0;
 uint32_t gLedPulseUntil = 0;
