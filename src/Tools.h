@@ -20,6 +20,7 @@ void execute(const char* name, JsonObjectConst args, JsonObject result);
 void loop(const std::function<void(const String& label)>& onTimerFired);
 
 bool ledOn();
+bool isBlinking();
 void blink(int times, int periodMs = 300);
 int activeTimers();
 

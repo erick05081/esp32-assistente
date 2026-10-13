@@ -28,6 +28,12 @@ int getSoundLevelPercent();
 // Retorna true se detectar um som alto (palma, assobio, voz próxima)
 bool detectLoudSound(int threshold = 350);
 
+// ---- Feedback Visual Ativo com LED (GPIO 2) ----
+// Pisca o LED onboard em tempo real quando o microfone detecta voz/som
+void setMicLedFeedback(bool enabled);
+bool isMicLedFeedbackEnabled();
+void updateMicLedFeedback();
+
 // Executa um autoteste de hardware (escala musical no falante + leitura do mic)
 void runSelfTest();
 

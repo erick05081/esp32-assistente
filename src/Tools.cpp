@@ -15,6 +15,7 @@ struct Timer {
 
 Timer gTimers[MAX_TIMERS];
 bool gLed = false;
+bool gIsBlinking = false;
 
 void setLed(bool on) {
   gLed = on;
@@ -56,6 +57,7 @@ void begin() {
 }
 
 bool ledOn() { return gLed; }
+bool isBlinking() { return gIsBlinking; }
 
 int activeTimers() {
   int n = 0;
@@ -64,6 +66,7 @@ int activeTimers() {
 }
 
 void blink(int times, int periodMs) {
+  gIsBlinking = true;
   bool prev = gLed;
   for (int i = 0; i < times; i++) {
     digitalWrite(LED_PIN, HIGH);
@@ -72,6 +75,7 @@ void blink(int times, int periodMs) {
     delay(periodMs / 2);
   }
   setLed(prev);
+  gIsBlinking = false;
 }
 
 void declare(JsonArray d) {

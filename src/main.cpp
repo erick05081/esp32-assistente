@@ -73,6 +73,8 @@ static void sendStatus() {
   d["led"] = Tools::ledOn();
   d["timers"] = Tools::activeTimers();
   d["memory"] = assistant.historySize();
+  d["mic"] = AudioHardware::getSoundLevelPercent();
+  d["micFb"] = AudioHardware::isMicLedFeedbackEnabled();
   struct tm t;
   if (getLocalTime(&t, 5)) {
     char buf[20];
@@ -109,7 +111,8 @@ static void connectWifi() {
 
 static void handleAsk(const String& text) {
   Serial.printf("[ASK] %s\n", text.c_str());
-  AudioHardware::playChirp();  // feedback sonoro instantâneo no alto-falante
+  Tools::blink(2, 60);         // Feedback visual ativo: pisca 2x ao ouvir a pergunta
+  AudioHardware::playChirp();  // Feedback sonoro instantâneo no alto-falante
   sendEvent("thinking");
   uint32_t t0 = millis();
 
@@ -155,6 +158,10 @@ static void handleLine(const char* line) {
     String text = in["text"] | "";
     text.trim();
     if (text.length()) handleAsk(text);
+  } else if (!strcmp(t, "wake")) {
+    Serial.println("[BLE] Palavra 'Aurora' detectada!");
+    AudioHardware::playChirp();
+    Tools::blink(3, 70);  // Feedback visual ativo: pisca 3x ao ouvir o nome 'Aurora'
   } else if (!strcmp(t, "status")) {
     sendStatus();
     flushPendingAlerts();
@@ -165,6 +172,9 @@ static void handleLine(const char* line) {
     sendEvent("info", "Memória da conversa apagada.");
   } else if (!strcmp(t, "chirp")) {
     AudioHardware::playChirp();
+    Tools::blink(1, 80);
+  } else if (!strcmp(t, "test_hw")) {
+    AudioHardware::runSelfTest();
   } else if (!strcmp(t, "ping")) {
     sendEvent("pong");
   }
@@ -180,11 +190,13 @@ static void assistantTask(void*) {
   bool lastWifi = false;
   for (;;) {
     char* line = nullptr;
-    if (xQueueReceive(inbox, &line, pdMS_TO_TICKS(250)) == pdTRUE) {
+    if (xQueueReceive(inbox, &line, pdMS_TO_TICKS(100)) == pdTRUE) {
       Serial.printf("[RX] %.300s\n", line);
       handleLine(line);
       free(line);
     }
+
+    AudioHardware::updateMicLedFeedback();
 
     Tools::loop([](const String& label) {
       String msg = "Lembrete: " + label;
@@ -232,11 +244,33 @@ static void handleSerialLine(String s) {
   } else if (s == "/som" || s == "/teste") {
     AudioHardware::runSelfTest();
     return;
-  } else if (s == "/mic") {
-    int raw = AudioHardware::readMicRaw();
-    int p2p = AudioHardware::readMicPeakToPeak(60);
-    int pct = AudioHardware::getSoundLevelPercent();
-    Serial.printf("[MIC] Raw: %d | Pico-a-Pico: %d | Nivel: %d%%\n", raw, p2p, pct);
+  } else if (s.startsWith("/mic")) {
+    if (s == "/mic on") {
+      AudioHardware::setMicLedFeedback(true);
+    } else if (s == "/mic off") {
+      AudioHardware::setMicLedFeedback(false);
+    } else if (s == "/mic teste") {
+      Serial.println("[MIC] Testando microfone e LED por 5 segundos. Fale no microfone...");
+      uint32_t t0 = millis();
+      while (millis() - t0 < 5000) {
+        AudioHardware::updateMicLedFeedback();
+        int raw = AudioHardware::readMicRaw();
+        int p2p = AudioHardware::readMicPeakToPeak(35);
+        int pct = AudioHardware::getSoundLevelPercent();
+        Serial.printf("   Raw: %4d | P2P: %4d | Nivel: %3d%% | LED: %s\n",
+                      raw, p2p, pct, digitalRead(LED_PIN) ? "ON (VOZ)" : "off");
+        delay(100);
+      }
+      Serial.println("[MIC] Teste concluido.");
+    } else {
+      int raw = AudioHardware::readMicRaw();
+      int p2p = AudioHardware::readMicPeakToPeak(60);
+      int pct = AudioHardware::getSoundLevelPercent();
+      bool fb = AudioHardware::isMicLedFeedbackEnabled();
+      Serial.printf("[MIC] Raw: %d | Pico-a-Pico: %d | Nivel: %d%% | Feedback LED: %s\n",
+                    raw, p2p, pct, fb ? "ATIVO" : "DESATIVO");
+      Serial.println("      Dica: Use '/mic teste' para acompanhar 5s de voz ou '/mic on|off'.");
+    }
     return;
   } else {
     d["t"] = "ask";
@@ -275,6 +309,8 @@ void setup() {
 }
 
 void loop() {
+  AudioHardware::updateMicLedFeedback();
+
   static String buf;
   while (Serial.available()) {
     char c = (char)Serial.read();
@@ -285,5 +321,5 @@ void loop() {
       buf += c;
     }
   }
-  delay(20);
+  delay(10);
 }

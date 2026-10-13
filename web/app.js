@@ -457,9 +457,9 @@ function updateStatus(m) {
   $("st-rssi").textContent = m.rssi != null ? `${m.rssi} dBm` : "—";
   $("st-heap").textContent = m.heap ? `${Math.round(m.heap / 1024)} KB` : "—";
   $("st-uptime").textContent = m.uptime != null ? fmtUptime(m.uptime) : "—";
-  $("st-model").textContent = m.model || "—";
   $("st-timers").textContent = m.timers ?? "—";
   $("st-fw").textContent = m.fw ? `v${m.fw}` : "—";
+  if ($("st-mic")) $("st-mic").textContent = m.mic != null ? `${m.mic}% (ativo)` : "—";
 
   if (m.ssid && !$("cfg-ssid").value) $("cfg-ssid").value = m.ssid;
   if (m.model) {
@@ -502,6 +502,7 @@ async function startListening() {
   voice.stopWakeWordLoop();
   setState("listening", "Ouvindo você…");
   $("interim").textContent = "";
+  ble.send({ t: "chirp" }).catch(() => {});
   try {
     const text = await voice.listen((t) => ($("interim").textContent = t));
     if (state !== "listening") return;
@@ -534,7 +535,7 @@ function startWakeWordMode() {
   voice.startWakeWordLoop(async (command) => {
     console.log("[WAKE] Wake word detectada! Comando:", command);
     playDing();
-    ble.send({ t: "chirp" }).catch(() => {});
+    ble.send({ t: "wake" }).catch(() => {});
     $("interim").textContent = "✨ Aurora ativa!";
 
     if (command && command.length > 2) {
@@ -795,6 +796,12 @@ $("btn-save-ai").addEventListener("click", () => {
 });
 
 $("btn-refresh").addEventListener("click", () => requireConnection() && ble.send({ t: "status" }));
+$("btn-test-hw")?.addEventListener("click", () => {
+  if (requireConnection()) {
+    ble.send({ t: "test_hw" }).catch((e) => toast(e.message, { error: true }));
+    toast("Testando som e microfone no ESP32…");
+  }
+});
 $("btn-reset").addEventListener("click", () => {
   clearChat();
   if (ble.connected) ble.send({ t: "reset" });
