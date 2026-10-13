@@ -139,14 +139,12 @@
       </section>
 
       <section class="card">
-        <h3>Voz</h3>
-        <label class="field"><span>Voz do assistente</span><select id="cfg-voice"></select></label>
-        <label class="field"><span>Velocidade <output id="rate-out">1.0×</output></span><input id="cfg-rate" type="range" min="0.6" max="1.6" step="0.1" value="1.05" /></label>
-        <label class="switch"><input id="cfg-speak" type="checkbox" checked /><span class="track"></span>Ler respostas em voz alta</label>
-        <button type="button" id="btn-test-voice" class="btn ghost">Testar voz</button>
+        <h3>Saída de Áudio</h3>
+        <p style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-bottom: 0.75rem;">O áudio das respostas sai diretamente no <b>alto-falante físico do ESP32 (GPIO 18)</b> de forma autônoma pelo Wi-Fi.</p>
+        <label class="switch"><input id="cfg-speak" type="checkbox" /><span class="track"></span>Tocar áudio também no celular (opcional)</label>
       </section>
 
-      <p class="foot-note">O reconhecimento e a síntese de voz acontecem no celular; o ESP32 recebe e responde em texto via Bluetooth LE.</p>
+      <p class="foot-note">O ESP32 funciona de forma autônoma pelo Wi-Fi. O Bluetooth e este painel servem apenas para configuração e testes.</p>
     </form>
   </dialog>
 

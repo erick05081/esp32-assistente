@@ -28,6 +28,7 @@
 #include "AudioHardware.h"
 #include "BleLink.h"
 #include "Settings.h"
+#include "SpeechPlayer.h"
 #include "Tools.h"
 #include "config.h"
 
@@ -129,6 +130,52 @@ static void handleAsk(const String& text) {
   if (r.model.length()) d["model"] = r.model;
   d["ms"] = millis() - t0;
   sendJson(d);
+
+  // Reproduz a resposta falada diretamente no alto-falante físico do ESP32!
+  if (r.ok && r.text.length() > 0) {
+    Serial.println("[SPEECH] Reproduzindo voz no alto-falante físico...");
+    SpeechPlayer::say(r.text);
+  }
+}
+
+static void handleAudioInput() {
+  if (SpeechPlayer::isSpeaking()) return;
+
+  Serial.println("[MIC] Captando voz pelo microfone físico...");
+  AudioHardware::playChirp();
+  Tools::blink(1, 60);
+
+  std::vector<uint8_t> wav;
+  if (!AudioHardware::recordWav(wav, 2800)) {
+    Serial.println("[MIC] Falha na gravação.");
+    return;
+  }
+
+  Serial.printf("[MIC] Gravação concluída (%u bytes). Consultando Gemini...\n", (unsigned int)wav.size());
+  sendEvent("thinking");
+  uint32_t t0 = millis();
+
+  Assistant::Result r = assistant.askAudio(wav.data(), wav.size(), [](const char* tool) {
+    JsonDocument d;
+    d["t"] = "tool";
+    d["name"] = tool;
+    sendJson(d);
+  });
+
+  if (r.ok && r.text != "[IGNORAR]" && r.text.length() > 0) {
+    Serial.printf("[REPLY] %s\n", r.text.c_str());
+    JsonDocument d;
+    d["t"] = "reply";
+    d["text"] = r.text;
+    if (r.model.length()) d["model"] = r.model;
+    d["ms"] = millis() - t0;
+    sendJson(d);
+
+    Serial.println("[SPEECH] Reproduzindo voz no alto-falante físico...");
+    SpeechPlayer::say(r.text);
+  } else {
+    Serial.println("[MIC] Áudio ignorado (silêncio ou ruído).");
+  }
 }
 
 static void handleConfig(JsonObjectConst in) {
@@ -244,6 +291,14 @@ static void handleSerialLine(String s) {
   } else if (s == "/som" || s == "/teste") {
     AudioHardware::runSelfTest();
     return;
+  } else if (s.startsWith("/falar ")) {
+    String txt = s.substring(7);
+    Serial.printf("[SPEECH] Testando fala no alto-falante: \"%s\"\n", txt.c_str());
+    SpeechPlayer::say(txt);
+    return;
+  } else if (s == "/ouvir" || s == "/escutar") {
+    handleAudioInput();
+    return;
   } else if (s.startsWith("/mic")) {
     if (s == "/mic on") {
       AudioHardware::setMicLedFeedback(true);
@@ -269,7 +324,7 @@ static void handleSerialLine(String s) {
       bool fb = AudioHardware::isMicLedFeedbackEnabled();
       Serial.printf("[MIC] Raw: %d | Pico-a-Pico: %d | Nivel: %d%% | Feedback LED: %s\n",
                     raw, p2p, pct, fb ? "ATIVO" : "DESATIVO");
-      Serial.println("      Dica: Use '/mic teste' para acompanhar 5s de voz ou '/mic on|off'.");
+      Serial.println("      Dica: Use '/mic teste' para acompanhar 5s de voz ou '/falar <texto>'.");
     }
     return;
   } else {
@@ -288,8 +343,10 @@ void setup() {
   delay(200);
   Serial.printf("\n\n=== %s — assistente ESP32 v%s ===\n", ASSISTANT_NAME, FIRMWARE_VERSION);
 
+  pinMode(0, INPUT_PULLUP);  // Botão BOOT da placa como acionador manual
   settings.load();
   Tools::begin();
+  SpeechPlayer::begin();
 
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("esp32-assistente");
@@ -306,10 +363,35 @@ void setup() {
   Tools::blink(2, 200);
   AudioHardware::playBootChime();  // Toca melodia alegre no alto-falante ao ligar!
   Serial.printf("[SYS] pronto. heap livre: %u bytes\n", ESP.getFreeHeap());
+  Serial.println("[SYS] Dica: Aperte o botao BOOT da placa para falar ou digite /falar <texto>.");
 }
 
 void loop() {
-  AudioHardware::updateMicLedFeedback();
+  if (!SpeechPlayer::isSpeaking()) {
+    AudioHardware::updateMicLedFeedback();
+
+    // 1. Acionamento manual pelo botao BOOT (GPIO 0)
+    static bool lastBootBtn = HIGH;
+    bool bootBtn = digitalRead(0);
+    if (bootBtn == LOW && lastBootBtn == HIGH) {
+      delay(40);
+      if (digitalRead(0) == LOW) {
+        Serial.println("[BTN] Botao BOOT pressionado: ativando microfone!");
+        handleAudioInput();
+      }
+    }
+    lastBootBtn = bootBtn;
+
+    // 2. Acionamento por voz alta / fala proxima no microfone de interfone
+    static uint32_t lastVadTrigger = 0;
+    if (millis() - lastVadTrigger > 6000) {
+      if (AudioHardware::detectLoudSound(450)) {
+        lastVadTrigger = millis();
+        Serial.println("[VAD] Voz detectada no microfone! Ouvindo...");
+        handleAudioInput();
+      }
+    }
+  }
 
   static String buf;
   while (Serial.available()) {

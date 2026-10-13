@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Preferências locais
 // --------------------------------------------------------------------------
 const prefs = Object.assign(
-  { voiceURI: "", rate: 1.05, speak: true, continuous: false, wakeWord: true },
+  { voiceURI: "", rate: 1.05, speak: false, continuous: false, wakeWord: false },
   JSON.parse(localStorage.getItem("aurora.prefs") || "{}"),
 );
 const savePrefs = () => localStorage.setItem("aurora.prefs", JSON.stringify(prefs));
@@ -584,7 +584,10 @@ async function ask(text) {
 }
 
 async function respond(text, { allowContinue = true } = {}) {
-  if (!prefs.speak || !voice.synth) return finishTurn(allowContinue);
+  if (!prefs.speak || !voice.synth) {
+    setState("idle", "🔊 Áudio no alto-falante do ESP32");
+    return finishTurn(allowContinue);
+  }
   voice.stopWakeWordLoop();
   setState("speaking");
   const completed = await voice.speak(text, prefs);
@@ -832,23 +835,28 @@ $("cfg-voice").addEventListener("change", (e) => {
 });
 
 const rateEl = $("cfg-rate");
-const syncRate = () => ($("rate-out").textContent = `${Number(prefs.rate).toFixed(1)}×`);
-rateEl.value = prefs.rate;
-rateEl.addEventListener("input", () => {
-  prefs.rate = Number(rateEl.value);
-  savePrefs();
-  syncRate();
-});
+if (rateEl) {
+  rateEl.value = prefs.rate;
+  rateEl.addEventListener("input", () => {
+    prefs.rate = Number(rateEl.value);
+    savePrefs();
+    syncRate();
+  });
+}
 
-$("cfg-speak").checked = prefs.speak;
-$("cfg-speak").addEventListener("change", (e) => {
-  prefs.speak = e.target.checked;
-  savePrefs();
-});
+const speakEl = $("cfg-speak");
+if (speakEl) {
+  speakEl.checked = !!prefs.speak;
+  speakEl.addEventListener("change", (e) => {
+    prefs.speak = e.target.checked;
+    savePrefs();
+    toast(prefs.speak ? "Áudio duplicado no celular ativado" : "Áudio saindo apenas no alto-falante do ESP32");
+  });
+}
 
-$("btn-test-voice").addEventListener("click", () => {
+$("btn-test-voice")?.addEventListener("click", () => {
   const name = lastStatus?.name || "Aurora";
-  voice.speak(`Olá! Eu sou a ${name}, sua assistente rodando no ESP32. Como posso ajudar?`, prefs);
+  voice.speak(`Olá! Eu sou a ${name}, sua assistente rodando no ESP32.`, prefs);
 });
 
 // --------------------------------------------------------------------------

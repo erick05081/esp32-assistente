@@ -18,6 +18,7 @@ class Assistant {
 
   void begin(Settings* settings);
   Result ask(const String& userText, const ToolNotifier& onTool = nullptr);
+  Result askAudio(const uint8_t* wavBytes, size_t wavLen, const ToolNotifier& onTool = nullptr);
   void clearHistory();
   size_t historySize() const;
 };

@@ -219,4 +219,69 @@ void runSelfTest() {
   playSuccess();
 }
 
+bool recordWav(std::vector<uint8_t>& outWav, unsigned int durationMs) {
+  const uint32_t sampleRate = 8000;
+  const uint32_t numSamples = (sampleRate * durationMs) / 1000;
+  const uint32_t dataSize = numSamples * 2;
+  const uint32_t fileSize = 44 + dataSize;
+
+  outWav.resize(fileSize);
+  uint8_t* buf = outWav.data();
+
+  // Cabeçalho WAV RIFF
+  memcpy(buf, "RIFF", 4);
+  uint32_t riffSize = fileSize - 8;
+  memcpy(buf + 4, &riffSize, 4);
+  memcpy(buf + 8, "WAVEfmt ", 8);
+  uint32_t subchunk1Size = 16;
+  memcpy(buf + 16, &subchunk1Size, 4);
+  uint16_t audioFormat = 1; // PCM linear
+  memcpy(buf + 20, &audioFormat, 2);
+  uint16_t numChannels = 1; // Mono
+  memcpy(buf + 22, &numChannels, 2);
+  memcpy(buf + 24, &sampleRate, 4);
+  uint32_t byteRate = sampleRate * numChannels * 2;
+  memcpy(buf + 28, &byteRate, 4);
+  uint16_t blockAlign = numChannels * 2;
+  memcpy(buf + 32, &blockAlign, 2);
+  uint16_t bitsPerSample = 16;
+  memcpy(buf + 34, &bitsPerSample, 2);
+  memcpy(buf + 36, "data", 4);
+  memcpy(buf + 40, &dataSize, 4);
+
+  int16_t* samples = (int16_t*)(buf + 44);
+
+  // Calcula baseline inicial (DC offset)
+  long sumDc = 0;
+  for (int i = 0; i < 64; i++) {
+    sumDc += analogRead(MIC_PIN);
+    delayMicroseconds(50);
+  }
+  int dcOffset = sumDc / 64;
+
+  uint32_t intervalUs = 1000000 / sampleRate;
+  uint32_t nextSampleTime = micros();
+
+  // LED aceso continuamente enquanto grava a voz do usuário
+  digitalWrite(LED_PIN, HIGH);
+
+  for (uint32_t i = 0; i < numSamples; i++) {
+    while ((int32_t)(micros() - nextSampleTime) < 0) {
+      // espera precisa
+    }
+    nextSampleTime += intervalUs;
+
+    int raw = analogRead(MIC_PIN);
+    // Remove DC e aplica ganho digital de 14x para o eletreto
+    int val = (raw - dcOffset) * 14;
+    if (val > 32767) val = 32767;
+    if (val < -32768) val = -32768;
+
+    samples[i] = (int16_t)val;
+  }
+
+  digitalWrite(LED_PIN, LOW);
+  return true;
+}
+
 }  // namespace AudioHardware

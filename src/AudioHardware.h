@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <vector>
 
 // Driver de hardware para o Alto-falante (GPIO 18) e Microfone de Eletreto (GPIO 34).
 namespace AudioHardware {
@@ -36,5 +37,8 @@ void updateMicLedFeedback();
 
 // Executa um autoteste de hardware (escala musical no falante + leitura do mic)
 void runSelfTest();
+
+// Grava áudio do microfone (GPIO 34) em formato WAV (8kHz, 16-bit mono com ganho digital)
+bool recordWav(std::vector<uint8_t>& outWav, unsigned int durationMs = 2800);
 
 }  // namespace AudioHardware
