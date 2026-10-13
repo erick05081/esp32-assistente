@@ -371,6 +371,7 @@ void loop() {
     AudioHardware::updateMicLedFeedback();
 
     // 1. Acionamento manual pelo botao BOOT (GPIO 0)
+    static uint32_t lastVadCooldownUntil = 0;
     static bool lastBootBtn = HIGH;
     bool bootBtn = digitalRead(0);
     if (bootBtn == LOW && lastBootBtn == HIGH) {
@@ -378,17 +379,17 @@ void loop() {
       if (digitalRead(0) == LOW) {
         Serial.println("[BTN] Botao BOOT pressionado: ativando microfone!");
         handleAudioInput();
+        lastVadCooldownUntil = millis() + 2500;
       }
     }
     lastBootBtn = bootBtn;
 
-    // 2. Acionamento por voz no microfone de interfone
-    static uint32_t lastVadTrigger = 0;
-    if (millis() - lastVadTrigger > 3500) {
+    // 2. Acionamento por voz no microfone de interfone (com proteção contra auto-disparo)
+    if (millis() >= lastVadCooldownUntil) {
       if (AudioHardware::detectVoice()) {
-        lastVadTrigger = millis();
         Serial.println("[VAD] Voz detectada no microfone! Ouvindo...");
         handleAudioInput();
+        lastVadCooldownUntil = millis() + 2500;
       }
     }
   }

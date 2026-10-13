@@ -287,7 +287,7 @@ Assistant::Result Assistant::askAudio(std::vector<uint8_t>& wav, const ToolNotif
           "2. Se for uma chamada ('Aurora') ou pergunta/pedido, responda em português com texto limpo, natural e DIRETO (máximo 1 a 2 frases curtas), "
           "sem emojis, sem markdown e sem listas, pois sua resposta será falada em voz alta no alto-falante físico do interfone. "
           "Use as ferramentas disponíveis para controlar LED, timers ou status se solicitado.";
-  body += "\"}}],";
+  body += "\"}]}},";
 
   // Declara ferramentas
   {

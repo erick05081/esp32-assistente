@@ -36,8 +36,17 @@ void begin() {
   pinMode(MIC_PIN, INPUT);
   analogSetPinAttenuation(MIC_PIN, ADC_11db);
 
+  // Calibra o piso inicial de ruído real do circuito
+  int sumNoise = 0;
+  for (int i = 0; i < 4; i++) {
+    sumNoise += readMicPeakToPeak(25);
+    delay(10);
+  }
+  gAdaptiveNoiseFloor = constrain(sumNoise / 4, 60, 400);
+
   gInitialized = true;
-  Serial.printf("[AUDIO] Driver inicializado. Falante: GPIO %d, Mic: GPIO %d\n", SPEAKER_PIN, MIC_PIN);
+  Serial.printf("[AUDIO] Driver inicializado. Falante: GPIO %d, Mic: GPIO %d (piso ruído: %d)\n",
+                SPEAKER_PIN, MIC_PIN, gAdaptiveNoiseFloor);
 }
 
 void playTone(unsigned int freq, unsigned int durationMs) {
@@ -128,9 +137,28 @@ int getSoundLevelPercent() {
 
 bool detectVoice() {
   int p2p = readMicPeakToPeak(35);
-  // Piso de ruído adaptativo (típico 40-70). Voz humana gera 170-300+.
-  int threshold = constrain(gAdaptiveNoiseFloor + 75, 140, 220);
-  return p2p >= threshold;
+
+  // Acompanha o ruído ambiente dinamicamente (para cima e para baixo suavemente)
+  if (p2p < gAdaptiveNoiseFloor) {
+    gAdaptiveNoiseFloor = (gAdaptiveNoiseFloor * 7 + p2p) / 8;
+  } else if (p2p < gAdaptiveNoiseFloor + 80) {
+    gAdaptiveNoiseFloor = (gAdaptiveNoiseFloor * 31 + p2p) / 32;
+  }
+
+  // Limiar para voz humana: precisa superar o piso de ruído elétrico/ambiente em pelo menos 130
+  // e ter amplitude mínima de 300 (evita que zumbido ou ruído da fonte de alimentação dispare)
+  int threshold = max(gAdaptiveNoiseFloor + 130, 300);
+
+  if (p2p >= threshold) {
+    // Confirmação de dois estágios: voz humana dura várias centenas de milissegundos,
+    // enquanto ruído de RF/Wi-Fi ou clique elétrico dura menos de 1ms.
+    delay(15);
+    int p2p_confirm = readMicPeakToPeak(25);
+    if (p2p_confirm >= (threshold - 50)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool detectLoudSound(int threshold) {
@@ -162,14 +190,14 @@ void updateMicLedFeedback() {
     digitalWrite(LED_PIN, Tools::ledOn() ? HIGH : LOW);
   }
 
-  // Faz leitura em intervalos de 20ms
-  if (now - gLastMicSampleTime < 20) return;
+  // Faz leitura em intervalos de 25ms
+  if (now - gLastMicSampleTime < 25) return;
   gLastMicSampleTime = now;
 
-  // Decai lentamente o piso de ruído para se adaptar ao ambiente
+  // Decai lentamente o piso de ruído para se adaptar ao ambiente se a sala ficar quieta
   if (now - gLastFloorDecay >= 2000) {
     gLastFloorDecay = now;
-    if (gAdaptiveNoiseFloor > 35) gAdaptiveNoiseFloor -= 5;
+    if (gAdaptiveNoiseFloor > 60) gAdaptiveNoiseFloor -= 3;
   }
 
   // Amostragem rápida em janela curta (20 amostras com 70us entre elas = ~1.6ms)
@@ -184,13 +212,15 @@ void updateMicLedFeedback() {
 
   int p2p = maxVal - minVal;
 
-  // Atualiza o piso de ruído mínimo
+  // Atualiza o piso de ruído
   if (p2p < gAdaptiveNoiseFloor) {
-    gAdaptiveNoiseFloor = (gAdaptiveNoiseFloor * 3 + p2p) / 4;
+    gAdaptiveNoiseFloor = (gAdaptiveNoiseFloor * 7 + p2p) / 8;
+  } else if (p2p < gAdaptiveNoiseFloor + 70) {
+    gAdaptiveNoiseFloor = (gAdaptiveNoiseFloor * 31 + p2p) / 32;
   }
 
-  // Limiar de disparo da voz: piso de ruído + 80 (mínimo 100, máximo 300)
-  int threshold = constrain(gAdaptiveNoiseFloor + 80, 100, 300);
+  // Limiar de disparo do LED: apenas quando há voz real acima do ruído contínuo
+  int threshold = max(gAdaptiveNoiseFloor + 110, 280);
 
   // Se detectou voz/som acima do limiar
   if (p2p >= threshold) {
@@ -272,6 +302,9 @@ bool recordWav(std::vector<uint8_t>& outWav, unsigned int durationMs) {
   // LED aceso continuamente enquanto grava a voz do usuário
   digitalWrite(LED_PIN, HIGH);
 
+  float lastX = 0;
+  float lastY = 0;
+
   for (uint32_t i = 0; i < numSamples; i++) {
     while ((int32_t)(micros() - nextSampleTime) < 0) {
       // espera precisa
@@ -279,8 +312,14 @@ bool recordWav(std::vector<uint8_t>& outWav, unsigned int durationMs) {
     nextSampleTime += intervalUs;
 
     int raw = analogRead(MIC_PIN);
-    // Remove DC e aplica ganho digital de 14x para o eletreto
-    int val = (raw - dcOffset) * 14;
+    // Filtro passa-altas de 1ª ordem (remove offset DC e atenua zumbido elétrico de 60Hz da fonte)
+    float x = (float)raw;
+    float y = x - lastX + 0.94f * lastY;
+    lastX = x;
+    lastY = y;
+
+    // Ganho digital de 12x sobre o sinal de voz filtrado
+    int val = (int)(y * 12.0f);
     if (val > 32767) val = 32767;
     if (val < -32768) val = -32768;
 
